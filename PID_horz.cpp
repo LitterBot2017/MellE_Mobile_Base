@@ -25,7 +25,7 @@ float PID_horz::getNewValue(float distance,float elapsedTime)
 {
 	float newTurnSpeed;
 	float error=distance;
-	if(abs(error)<2)
+	if(abs(error)<4)
 	{
 		newTurnSpeed=0;
 		resetErrors();
