@@ -2,6 +2,7 @@
 #include <melle/MellE_msg.h>
 #include <melle/PC_msg.h>
 #include <melle/AndroidSensorData.h>
+#include <melle_obstacle_avoidance/ObAvData.h>
 #include <melle/Init_stat_msg.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Float32.h>
@@ -12,6 +13,9 @@
 #include "TinyGPS++.h"
 #include "PID.h"
 #include "PID_horz.h"
+#include <SharpIR.h>
+
+SharpIR sharp(A3, 20150);
 
 //States
 #define WAIT_FOR_GPS_LOCK 1
@@ -50,6 +54,10 @@ int sats;
 int waypointId;
 //End GPS stuff
 
+//obstacle avoidance
+int obstacle_command=0;
+//end obstacle avoidance
+
 //ROS Stuff
 ros::NodeHandle arduinoNode;
 
@@ -63,7 +71,7 @@ ros::Publisher Init_stat_pub("Init_stat_msg", &init_stat);
 //Keyboard teleop
 void motor_com_cb(const geometry_msgs::Twist& in_msg)
 {
-  if (!keyboard)
+  if (current_state != KEYBOARD)
   {
     return;
   }
@@ -77,11 +85,11 @@ void motor_com_cb(const geometry_msgs::Twist& in_msg)
   }
   if (in_msg.angular.z < 0)
   {
-    motor_control.TurnLeftMixed(mc_address, -1 * (int)in_msg.angular.z * (int)in_msg.linear.z);
+    motor_control.TurnLeftMixed(mc_address, -1 * (int)in_msg.angular.z * (int)in_msg.linear.x);
   }
   if (in_msg.angular.z > 0)
   {
-    motor_control.TurnRightMixed(mc_address, (int)in_msg.angular.z * (int)in_msg.linear.z);
+    motor_control.TurnRightMixed(mc_address, (int)in_msg.angular.z * (int)in_msg.linear.x);
   }
   if (in_msg.angular.z == 0 && in_msg.linear.x == 0)
   {
@@ -101,7 +109,7 @@ void waypoint_callback (const melle::PC_msg& msg)
   obstacle = msg.obstacle;
   keyboard = msg.keyboard_activate;
   waypointId = msg.waypoint_id;
-  /*if (keyboard == 1)
+  if (keyboard == 1)
   {
     current_state = KEYBOARD;
   }
@@ -109,11 +117,21 @@ void waypoint_callback (const melle::PC_msg& msg)
   {
     current_state = OBSTACLE_AVOIDANCE;
   }
-  else */
-  if (current_state == GET_WAYPOINT)
+  else if (current_state == GET_WAYPOINT)
   {
     current_state = MOVE_TO_WAYPOINT;
     msg_to_send.waypoint_reached = 0;
+  }
+  else if(!keyboard && !obstacle) 
+  {
+    if(sats>0)
+    {
+      current_state=GET_WAYPOINT;
+    }
+    else
+    {
+      current_state=WAIT_FOR_GPS_LOCK;
+    }
   }
 }
 ros::Subscriber <melle::PC_msg> pc_msg_subs("PC_msg", &waypoint_callback);
@@ -122,6 +140,10 @@ ros::Subscriber <melle::PC_msg> pc_msg_subs("PC_msg", &waypoint_callback);
 //Sensor data
 void sensor_data_cb (const melle::AndroidSensorData& msg)
 {
+  if(keyboard||obstacle)
+  {
+    return;
+  }
   curr_lat = msg.latitude;
   curr_long = msg.longitude;
   curr_course = msg.azimuth;
@@ -149,22 +171,40 @@ void sensor_data_cb (const melle::AndroidSensorData& msg)
 ros::Subscriber <melle::AndroidSensorData> position_sub("AndroidSensorData", &sensor_data_cb);
 //end of sensor data
 
+//obstacle commands
+void ob_av_data_callback (const melle_obstacle_avoidance::ObAvData& msg) {
+  obstacle_command=msg.command;
+}
+
+ros::Subscriber <melle_obstacle_avoidance::ObAvData> ob_av_data_sub("ob_av_data", &ob_av_data_callback);
+//end of obstacles command
+
 void obstacle_avoid()
 {
   //Obstacle avoidance routine goes here
-  motor_control.TurnRightMixed(mc_address, 0);
-  motor_control.ForwardMixed(mc_address, 0);
+  switch (obstacle_command) {
+    case 0:
+      motor_control.TurnRightMixed(mc_address, 0);
+      motor_control.BackwardMixed(mc_address, 40);
+      break;
+    case 1:
+      motor_control.TurnLeftMixed(mc_address, 40);
+      break;
+    case 2:
+      motor_control.TurnRightMixed(mc_address, 40);
+      break;
+  }
 }
 
 void move_to_waypoint()
 {
   msg_to_send.dist_to_dest = dis_to_dest;
   msg_to_send.heading_to_dest = dest_course;
-  if (curr_course > 270 && dest_course < 90) {
-    curr_course -= 360;
-  } else if (curr_course < 90 && dest_course > 270) {
-    curr_course += 360;
-  }
+//  if (curr_course > 270 && dest_course < 90) {
+//    curr_course -= 360;
+//  } else if (curr_course < 90 && dest_course > 270) {
+//    curr_course += 360;
+//  }
   float newSpeed = test.getNewValue(curr_course, dest_course, elapsedTime);
   float newSpeedHorz = test_horz.getNewValue(dis_to_dest, elapsedTime);
   if (abs(curr_course - dest_course) > 30)
@@ -222,12 +262,11 @@ void setup() {
   arduinoNode.subscribe(pc_msg_subs);
   arduinoNode.subscribe(position_sub);
   arduinoNode.subscribe(keyboard_sub);
+  arduinoNode.subscribe(ob_av_data_sub);
   init_stat.gps_status = false;
   current_state = WAIT_FOR_GPS_LOCK;
   motor_control.begin(38400);
 }
-
-
 
 void loop() {
   // put your main code here, to run repeatedly:
@@ -248,6 +287,7 @@ void loop() {
     case KEYBOARD:
       break;
   }
+  msg_to_send.bin_fullness = sharp.getDistance();
   msg_to_send.dist_to_dest = dis_to_dest;
   msg_to_send.heading_to_dest = dest_course;
   msg_to_send.current_waypoint_id = waypointId;
