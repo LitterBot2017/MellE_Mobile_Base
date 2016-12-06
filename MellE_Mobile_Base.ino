@@ -13,9 +13,8 @@
 #include "TinyGPS++.h"
 #include "PID.h"
 #include "PID_horz.h"
-#include <SharpIR.h>
-
-SharpIR sharp(A3, 20150);
+#include "VoltageSensor.h"
+#include "IRSensor.h"
 
 //States
 #define WAIT_FOR_GPS_LOCK 1
@@ -67,6 +66,12 @@ melle::Init_stat_msg init_stat;
 
 ros::Publisher MellE_pub("MellE_msg", &msg_to_send);
 ros::Publisher Init_stat_pub("Init_stat_msg", &init_stat);
+
+int voltageSensorPin = A0;
+VoltageSensor voltageSensor = VoltageSensor(voltageSensorPin);
+
+int irSensorPin = A3;
+IRSensor irSensor(irSensorPin);
 
 //Keyboard teleop
 void motor_com_cb(const geometry_msgs::Twist& in_msg)
@@ -287,7 +292,8 @@ void loop() {
     case KEYBOARD:
       break;
   }
-  msg_to_send.bin_fullness = sharp.getDistance();
+  msg_to_send.battery = voltageSensor.getBatteryPercentage();
+  msg_to_send.bin_fullness = irSensor.getBinFullnessPercentage();;
   msg_to_send.dist_to_dest = dis_to_dest;
   msg_to_send.heading_to_dest = dest_course;
   msg_to_send.current_waypoint_id = waypointId;
