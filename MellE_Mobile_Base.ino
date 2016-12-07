@@ -129,7 +129,11 @@ void waypoint_callback (const melle::PC_msg& msg)
   }
   else if(!keyboard && !obstacle) 
   {
-    if(sats>0)
+    if(sats>0 && current_state == MOVE_TO_WAYPOINT)
+    {
+      current_state=MOVE_TO_WAYPOINT;
+    }
+    else if(sats>0 && current_state != MOVE_TO_WAYPOINT)
     {
       current_state=GET_WAYPOINT;
     }
