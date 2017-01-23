@@ -32,9 +32,11 @@ long oldTime = millis();
 
 //Motor stuff
 #define mc_address 0x81
+#define MAX_TURNING_SPEED 20
+#define MAX_FORWARD_SPEED 50
 RoboClaw motor_control(&Serial2, 10000);
-PID test = PID(0, 10, 0.01, 0, 0, 20, -20);
-PID_horz test_horz = PID_horz(0, 10, 0.01, 0, 0, 50, -50);
+PID test = PID(0, 10, 0.01, 0, 0, MAX_TURNING_SPEED, -MAX_TURNING_SPEED);
+PID_horz test_horz = PID_horz(0, 10, 0.01, 0, 0, MAX_FORWARD_SPEED, -MAX_FORWARD_SPEED);
 //End motor stuff
 long test_time = millis();
 
@@ -82,19 +84,19 @@ void motor_com_cb(const geometry_msgs::Twist& in_msg)
   }
   if (in_msg.linear.x > 0)
   {
-    motor_control.ForwardMixed(mc_address, (int) in_msg.linear.x);
+    motor_control.ForwardMixed(mc_address, 30);//(int) in_msg.linear.x);
   }
   if (in_msg.linear.x < 0)
   {
-    motor_control.BackwardMixed(mc_address, (int) - 1 * in_msg.linear.x);
+    motor_control.BackwardMixed(mc_address, 30);//(int) - 1 * in_msg.linear.x);
   }
   if (in_msg.angular.z < 0)
   {
-    motor_control.TurnLeftMixed(mc_address, -1 * (int)in_msg.angular.z * (int)in_msg.linear.x);
+    motor_control.TurnLeftMixed(mc_address, 30);//-1 * (int)in_msg.angular.z * (int)in_msg.linear.x);
   }
   if (in_msg.angular.z > 0)
   {
-    motor_control.TurnRightMixed(mc_address, (int)in_msg.angular.z * (int)in_msg.linear.x);
+    motor_control.TurnRightMixed(mc_address, 30);//(int)in_msg.angular.z * (int)in_msg.linear.x);
   }
   if (in_msg.angular.z == 0 && in_msg.linear.x == 0)
   {
@@ -194,13 +196,17 @@ void obstacle_avoid()
   switch (obstacle_command) {
     case 0:
       motor_control.TurnRightMixed(mc_address, 0);
-      motor_control.BackwardMixed(mc_address, 40);
+      motor_control.BackwardMixed(mc_address, 20);
       break;
     case 1:
-      motor_control.TurnLeftMixed(mc_address, 40);
+      motor_control.TurnLeftMixed(mc_address, 20);
       break;
     case 2:
-      motor_control.TurnRightMixed(mc_address, 40);
+      motor_control.TurnRightMixed(mc_address, 20);
+      break;
+    case 3:
+      motor_control.TurnRightMixed(mc_address, 0);
+      motor_control.BackwardMixed(mc_address, 0);
       break;
   }
 }
@@ -216,30 +222,52 @@ void move_to_waypoint()
 //  }
   float newSpeed = test.getNewValue(curr_course, dest_course, elapsedTime);
   float newSpeedHorz = test_horz.getNewValue(dis_to_dest, elapsedTime);
-  if (abs(curr_course - dest_course) > 30)
+  newSpeed=(newSpeed/128)*64;
+  newSpeedHorz=(newSpeedHorz/128)*64;
+  float m1Speed=64+newSpeed+newSpeedHorz;
+  float m2Speed=64-newSpeed+newSpeedHorz;
+  if(m1Speed>89)
   {
-    motor_control.ForwardMixed(mc_address, 0);
-    if (newSpeed >= 0)
-    {
-      motor_control.TurnLeftMixed(mc_address, newSpeed);
-    }
-    else
-    {
-      motor_control.TurnRightMixed(mc_address, -1 * newSpeed);
-    }
+    m1Speed=89;
   }
-  else
+  if(m1Speed<39)
   {
-    motor_control.TurnLeftMixed(mc_address, 0);
-    if (newSpeedHorz >= 0)
-    {
-      motor_control.ForwardMixed(mc_address, newSpeedHorz);
-    }
-    else
-    {
-      motor_control.BackwardMixed(mc_address, -1 * newSpeedHorz);
-    }
+    m1Speed=39;
   }
+  if(m2Speed>89)
+  {
+    m2Speed=89;
+  }
+  if(m2Speed<39)
+  {
+    m2Speed=39;
+  }
+  motor_control.ForwardBackwardM1(mc_address,m1Speed);
+  motor_control.ForwardBackwardM2(mc_address,m2Speed);
+//  if (abs(curr_course - dest_course) > 30)
+//  {
+//    motor_control.ForwardMixed(mc_address, 0);
+//    if (newSpeed >= 0)
+//    {
+//      motor_control.TurnLeftMixed(mc_address, newSpeed);
+//    }
+//    else
+//    {
+//      motor_control.TurnRightMixed(mc_address, -1 * newSpeed);
+//    }
+//  }
+//  else
+//  {
+//    motor_control.TurnLeftMixed(mc_address, 0);
+//    if (newSpeedHorz >= 0)
+//    {
+//      motor_control.ForwardMixed(mc_address, newSpeedHorz);
+//    }
+//    else
+//    {
+//      motor_control.BackwardMixed(mc_address, -1 * newSpeedHorz);
+//    }
+//  }
   if (dis_to_dest < 4 && current_state == MOVE_TO_WAYPOINT)
   {
     msg_to_send.waypoint_reached = 1;
