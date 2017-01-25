@@ -4,6 +4,7 @@
 #include <melle/AndroidSensorData.h>
 #include <melle_obstacle_avoidance/ObAvData.h>
 #include <melle/Init_stat_msg.h>
+#include <melle/GPS_msg.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int16.h>
@@ -11,8 +12,6 @@
 #include <geometry_msgs/Twist.h>
 #include <RoboClaw.h>
 #include "TinyGPS++.h"
-#include "PID.h"
-#include "PID_horz.h"
 #include "VoltageSensor.h"
 #include "IRSensor.h"
 
@@ -32,11 +31,9 @@ long oldTime = millis();
 
 //Motor stuff
 #define mc_address 0x81
-#define MAX_TURNING_SPEED 20
-#define MAX_FORWARD_SPEED 50
 RoboClaw motor_control(&Serial2, 10000);
-PID test = PID(0, 10, 0.01, 0, 0, MAX_TURNING_SPEED, -MAX_TURNING_SPEED);
-PID_horz test_horz = PID_horz(0, 10, 0.01, 0, 0, MAX_FORWARD_SPEED, -MAX_FORWARD_SPEED);
+float l_motor_val;
+float r_motor_val;
 //End motor stuff
 long test_time = millis();
 
@@ -116,6 +113,8 @@ void waypoint_callback (const melle::PC_msg& msg)
   obstacle = msg.obstacle;
   keyboard = msg.keyboard_activate;
   waypointId = msg.waypoint_id;
+  l_motor_val = msg.l_motor_val;
+  r_motor_val = msg.r_motor_val;  
   if (keyboard == 1)
   {
     current_state = KEYBOARD;
@@ -149,7 +148,7 @@ ros::Subscriber <melle::PC_msg> pc_msg_subs("PC_msg", &waypoint_callback);
 // end of dest lat long
 
 //Sensor data
-void sensor_data_cb (const melle::AndroidSensorData& msg)
+void sensor_data_cb (const melle::GPS_msg& msg)
 {
   if(keyboard||obstacle)
   {
@@ -157,7 +156,7 @@ void sensor_data_cb (const melle::AndroidSensorData& msg)
   }
   curr_lat = msg.latitude;
   curr_long = msg.longitude;
-  curr_course = msg.azimuth;
+  curr_course = msg.heading;
   sats = msg.sats;
   if (sats == 0)
   {
@@ -179,7 +178,7 @@ void sensor_data_cb (const melle::AndroidSensorData& msg)
     }
   }
 }
-ros::Subscriber <melle::AndroidSensorData> position_sub("AndroidSensorData", &sensor_data_cb);
+ros::Subscriber <melle::GPS_msg> position_sub("GPS_msg", &sensor_data_cb);
 //end of sensor data
 
 //obstacle commands
@@ -211,63 +210,12 @@ void obstacle_avoid()
   }
 }
 
-void move_to_waypoint()
+void move_to_waypoint(float m1speed, float m2speed)
 {
   msg_to_send.dist_to_dest = dis_to_dest;
   msg_to_send.heading_to_dest = dest_course;
-//  if (curr_course > 270 && dest_course < 90) {
-//    curr_course -= 360;
-//  } else if (curr_course < 90 && dest_course > 270) {
-//    curr_course += 360;
-//  }
-  float newSpeed = test.getNewValue(curr_course, dest_course, elapsedTime);
-  float newSpeedHorz = test_horz.getNewValue(dis_to_dest, elapsedTime);
-  newSpeed=(newSpeed/128)*64;
-  newSpeedHorz=(newSpeedHorz/128)*64;
-  float m1Speed=64+newSpeed+newSpeedHorz;
-  float m2Speed=64-newSpeed+newSpeedHorz;
-  if(m1Speed>89)
-  {
-    m1Speed=89;
-  }
-  if(m1Speed<39)
-  {
-    m1Speed=39;
-  }
-  if(m2Speed>89)
-  {
-    m2Speed=89;
-  }
-  if(m2Speed<39)
-  {
-    m2Speed=39;
-  }
   motor_control.ForwardBackwardM1(mc_address,m1Speed);
   motor_control.ForwardBackwardM2(mc_address,m2Speed);
-//  if (abs(curr_course - dest_course) > 30)
-//  {
-//    motor_control.ForwardMixed(mc_address, 0);
-//    if (newSpeed >= 0)
-//    {
-//      motor_control.TurnLeftMixed(mc_address, newSpeed);
-//    }
-//    else
-//    {
-//      motor_control.TurnRightMixed(mc_address, -1 * newSpeed);
-//    }
-//  }
-//  else
-//  {
-//    motor_control.TurnLeftMixed(mc_address, 0);
-//    if (newSpeedHorz >= 0)
-//    {
-//      motor_control.ForwardMixed(mc_address, newSpeedHorz);
-//    }
-//    else
-//    {
-//      motor_control.BackwardMixed(mc_address, -1 * newSpeedHorz);
-//    }
-//  }
   if (dis_to_dest < 4 && current_state == MOVE_TO_WAYPOINT)
   {
     msg_to_send.waypoint_reached = 1;
@@ -313,7 +261,7 @@ void loop() {
       obstacle_avoid();
       break;
     case MOVE_TO_WAYPOINT:
-      move_to_waypoint();
+      move_to_waypoint(l_motor_val,r_motor_val);
       break;
     case WAIT_FOR_GPS_LOCK:
       wait_for_gps_lock();
