@@ -75,31 +75,55 @@ IRSensor irSensor(irSensorPin);
 //Keyboard teleop
 void motor_com_cb(const geometry_msgs::Twist& in_msg)
 {
-  if (current_state != KEYBOARD)
+  float turnSpeed=8;
+  float forwardSpeed=10;
+  int x=0;
+  int z=in_msg.angular.z;
+  if(in_msg.linear.x > 0) 
   {
-    return;
+    x=1;
   }
-  if (in_msg.linear.x > 0)
+  else if(in_msg.linear.x < 0) 
   {
-    motor_control.ForwardMixed(mc_address, 30);//(int) in_msg.linear.x);
+    x=-1;
   }
-  if (in_msg.linear.x < 0)
-  {
-    motor_control.BackwardMixed(mc_address, 30);//(int) - 1 * in_msg.linear.x);
-  }
-  if (in_msg.angular.z < 0)
-  {
-    motor_control.TurnLeftMixed(mc_address, 30);//-1 * (int)in_msg.angular.z * (int)in_msg.linear.x);
-  }
-  if (in_msg.angular.z > 0)
-  {
-    motor_control.TurnRightMixed(mc_address, 30);//(int)in_msg.angular.z * (int)in_msg.linear.x);
-  }
-  if (in_msg.angular.z == 0 && in_msg.linear.x == 0)
-  {
-    motor_control.ForwardMixed(mc_address, 0);
-    motor_control.TurnRightMixed(mc_address, 0);
-  }
+  float m1Speed=64+(x*forwardSpeed)+(z*turnSpeed);
+  float m2Speed=64+(x*forwardSpeed)-(z*turnSpeed);
+  if(m1Speed>77)
+    m1Speed=77;
+  else if(m1Speed<51)
+    m1Speed=51;
+  if(m2Speed>77)
+    m2Speed=77;
+  else if(m2Speed<51)
+    m2Speed=51;
+  motor_control.ForwardBackwardM1(mc_address,m1Speed);
+  motor_control.ForwardBackwardM2(mc_address,m2Speed);
+//  if (current_state != KEYBOARD)
+//  {
+//    return;
+//  }
+//  if (in_msg.linear.x > 0)
+//  {
+//    motor_control.ForwardMixed(mc_address, 30);//(int) in_msg.linear.x);
+//  }
+//  if (in_msg.linear.x < 0)
+//  {
+//    motor_control.BackwardMixed(mc_address, 30);//(int) - 1 * in_msg.linear.x);
+//  }
+//  if (in_msg.angular.z < 0)
+//  {
+//    motor_control.TurnLeftMixed(mc_address, 30);//-1 * (int)in_msg.angular.z * (int)in_msg.linear.x);
+//  }
+//  if (in_msg.angular.z > 0)
+//  {
+//    motor_control.TurnRightMixed(mc_address, 30);//(int)in_msg.angular.z * (int)in_msg.linear.x);
+//  }
+//  if (in_msg.angular.z == 0 && in_msg.linear.x == 0)
+//  {
+//    motor_control.ForwardMixed(mc_address, 0);
+//    motor_control.TurnRightMixed(mc_address, 0);
+//  }
 }
 
 ros::Subscriber <geometry_msgs::Twist> keyboard_sub("cmd_vel", &motor_com_cb);
@@ -154,7 +178,7 @@ void sensor_data_cb (const melle::GPS_msg& msg)
   {
     return;
   }
-  curr_lat = msg.latitude;
+  curr_lat = msg.lattitude;
   curr_long = msg.longitude;
   curr_course = msg.heading;
   sats = msg.sats;
@@ -210,7 +234,7 @@ void obstacle_avoid()
   }
 }
 
-void move_to_waypoint(float m1speed, float m2speed)
+void move_to_waypoint(float m1Speed, float m2Speed)
 {
   msg_to_send.dist_to_dest = dis_to_dest;
   msg_to_send.heading_to_dest = dest_course;
